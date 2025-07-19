@@ -4,6 +4,7 @@ dotenv.config();
 import { checkBTC } from "./services/bitcoin.js";
 import { checkUSDT } from "./services/usdt.js";
 import { checkXRP } from "./services/xrp.js";
+import axios from "axios";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -16,6 +17,28 @@ const DEVICES = {
   }
   // Agrega más dispositivos aquí
 };
+
+async function sendTelegramAlert({ amount, address, currency, txid }) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+
+  const message = `📥 *Nueva transacción confirmada*
+
+💸 Monto: *${amount} ${currency.toUpperCase()}*
+👛 Wallet: \`${address}\`
+🔗 TxID: \`${txid}\``;
+
+  try {
+    await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      chat_id: chatId,
+      text: message,
+      parse_mode: "Markdown"
+    });
+    console.log("✅ Alerta enviada a Telegram.");
+  } catch (error) {
+    console.error("❌ Error al enviar alerta a Telegram:", error.message);
+  }
+}
 
 app.get("/check-payment/:deviceId/:currency", async (req, res) => {
   const { deviceId, currency } = req.params;
@@ -43,7 +66,18 @@ app.get("/check-payment/:deviceId/:currency", async (req, res) => {
     else return res.status(400).json({ error: "Unsupported currency" });
 
     if (result.paid) {
-      return res.json({ status: "confirmed", txid: result.txid });
+      await sendTelegramAlert({
+        amount: result.amount,
+        address: walletAddress,
+        currency,
+        txid: result.txid
+      });
+      return res.json({
+        status: "confirmed",
+        txid: result.txid,
+        amount: result.amount,
+        message: `✅ Transacción confirmada: ${result.amount} ${currency.toUpperCase()} recibidos en ${walletAddress}`
+      });
     } else {
       return res.json({ status: "pending" });
     }
