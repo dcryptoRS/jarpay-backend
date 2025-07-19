@@ -5,9 +5,13 @@ export async function checkXRP(address) {
     const url = `https://api.xrpscan.com/api/v1/account/${address}/transactions`;
     const res = await axios.get(url);
 
-    const txs = res.data;
+    // Aseguramos que la data es un array
+    const txs = res.data.transactions;
 
-    // Buscar la primera transacción de tipo Payment confirmada
+    if (!Array.isArray(txs)) {
+      throw new Error("Formato inesperado de respuesta en XRPSCAN");
+    }
+
     const paymentTx = txs.find(tx =>
       tx.tx.TransactionType === "Payment" &&
       tx.tx.Destination === address &&
@@ -15,18 +19,18 @@ export async function checkXRP(address) {
     );
 
     if (paymentTx) {
-      const amount = paymentTx.tx.Amount / 1000000; // convertir drops a XRP
+      const amount = paymentTx.tx.Amount / 1_000_000; // drops → XRP
       return {
         paid: true,
         txid: paymentTx.hash,
-        amount: amount,
-        message: `Pago recibido de ${amount} XRP. Transacción confirmada exitosamente.`
+        amount,
+        message: `✅ Transacción confirmada: se recibieron ${amount} XRP.`
       };
     }
 
-    return { paid: false, message: "Aún no se ha detectado una transacción confirmada." };
+    return { paid: false, message: "⏳ Aún no se ha detectado una transacción confirmada." };
   } catch (err) {
     console.error("XRPSCAN check error:", err.message);
-    return { paid: false, message: "Error al consultar la API de XRPSCAN." };
+    return { paid: false, message: "❌ Error al consultar la API de XRPSCAN." };
   }
 }
