@@ -4,10 +4,20 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function checkXRP(address) {
+export async function checkXRP(address, lastConfirmedTxId = null) {
   console.log("🔍 Buscando transacción confirmada en XRPSCAN...");
 
+  const timeoutMs = 5 * 60 * 1000; // 5 minutos
+  const startTime = Date.now();
+
   while (true) {
+    if (Date.now() - startTime > timeoutMs) {
+      return {
+        paid: false,
+        error: "Timeout: no se detectó una nueva transacción en 5 minutos."
+      };
+    }
+
     try {
       const res = await axios.get(`https://api.xrpscan.com/api/v1/account/${address}/transactions`);
       const txs = res.data.transactions;
@@ -18,19 +28,12 @@ export async function checkXRP(address) {
         continue;
       }
 
-      for (const tx of txs) {
-        console.log("🧾 Revisando TX:", {
-          hash: tx.hash,
-          destination: tx.Destination,
-          type: tx.TransactionType,
-          result: tx.meta?.TransactionResult,
-        });
-      }
-
+      // Filtrar pagos exitosos hacia esta dirección
       const paymentTx = txs.find(tx =>
         tx.TransactionType === "Payment" &&
         tx.Destination === address &&
-        tx.meta?.TransactionResult === "tesSUCCESS"
+        tx.meta?.TransactionResult === "tesSUCCESS" &&
+        tx.hash !== lastConfirmedTxId // Ignorar txs repetidas
       );
 
       if (paymentTx) {
@@ -60,3 +63,4 @@ export async function checkXRP(address) {
     await delay(5000);
   }
 }
+
