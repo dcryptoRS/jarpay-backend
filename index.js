@@ -57,13 +57,22 @@ async function getLastTx(device_currency) {
 }
 
 // Guardar nueva tx confirmada
-async function saveConfirmedTx(device_currency, txid, amount) {
-  await pool.query(
-    `INSERT INTO confirmed_txs (device_currency, txid, amount)
-     VALUES ($1,$2,$3)
-     ON CONFLICT (device_currency) DO UPDATE SET txid = $2, amount = $3, timestamp = NOW()`,
-    [device_currency, txid, amount.toString()]
-  );
+export async function saveConfirmedTx(device_currency, txid, amount) {
+  console.log(`💾 Guardando tx confirmada en DB: ${device_currency} - ${txid} - ${amount}`);
+
+  try {
+    await pool.query(
+      `INSERT INTO confirmed_txs (device_currency, txid, amount)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (device_currency) DO UPDATE
+       SET txid = EXCLUDED.txid,
+           amount = EXCLUDED.amount,
+           timestamp = NOW();`,
+      [device_currency, txid, amount]
+    );
+  } catch (err) {
+    console.error("❌ Error al guardar transacción confirmada:", err.message);
+  }
 }
 
 // Endpoint principal
