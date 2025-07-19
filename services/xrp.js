@@ -2,31 +2,31 @@ import axios from "axios";
 
 export async function checkXRP(address) {
   try {
-    const res = await axios.get(`https://data.ripple.com/v2/accounts/${address}/transactions`);
-    const txs = res.data.transactions;
+    const url = `https://api.xrpscan.com/api/v1/account/${address}/transactions`;
+    const res = await axios.get(url);
 
-    if (txs.length > 0) {
-      const tx = txs[0].tx;
-      // El monto en XRP viene en 'Amount' que es string numérica en drops (1 XRP = 1,000,000 drops)
-      const amountXRP = parseFloat(tx.Amount) / 1_000_000;
+    const txs = res.data;
 
+    // Buscar la primera transacción de tipo Payment confirmada
+    const paymentTx = txs.find(tx =>
+      tx.tx.TransactionType === "Payment" &&
+      tx.tx.Destination === address &&
+      tx.meta?.TransactionResult === "tesSUCCESS"
+    );
+
+    if (paymentTx) {
+      const amount = paymentTx.tx.Amount / 1000000; // convertir drops a XRP
       return {
         paid: true,
-        txid: tx.hash,
-        amount: amountXRP,
-        message: `Transacción XRP confirmada por ${amountXRP} XRP`
+        txid: paymentTx.hash,
+        amount: amount,
+        message: `Pago recibido de ${amount} XRP. Transacción confirmada exitosamente.`
       };
     }
 
-    return {
-      paid: false,
-      message: "No se ha detectado ninguna transacción XRP en esta wallet"
-    };
+    return { paid: false, message: "Aún no se ha detectado una transacción confirmada." };
   } catch (err) {
-    console.error("XRP check error:", err.message);
-    return {
-      paid: false,
-      message: "Error al consultar las transacciones XRP"
-    };
+    console.error("XRPSCAN check error:", err.message);
+    return { paid: false, message: "Error al consultar la API de XRPSCAN." };
   }
 }
