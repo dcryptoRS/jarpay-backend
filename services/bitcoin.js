@@ -1,23 +1,43 @@
 import axios from "axios";
 
-export async function checkBTC(address) {
-  try {
-    const res = await axios.get(`https://mempool.space/api/address/${address}`);
-    const txs = res.data.txrefs || [];
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-    if (txs.length > 0) {
-      const amountBTC = txs[0].value / 1e8; // convertir satoshis a BTC
+export async function checkBTC(address, lastConfirmedTxId = null) {
+  console.log("🔍 Buscando transacción BTC confirmada...");
+
+  const timeoutMs = 10 * 60 * 1000; // 10 minutos
+  const startTime = Date.now();
+
+  while (true) {
+    if (Date.now() - startTime > timeoutMs) {
       return {
-        paid: true,
-        txid: txs[0].tx_hash,
-        amount: amountBTC,
-        message: `Pago en BTC confirmado por ${amountBTC} BTC`
+        paid: false,
+        error: "Timeout: no se detectó una nueva transacción BTC en 10 minutos."
       };
     }
 
-    return { paid: false, message: "No se ha detectado un pago en BTC" };
-  } catch (err) {
-    console.error("BTC check error:", err.message);
-    return { paid: false, message: "Error al verificar BTC" };
+    try {
+      const res = await axios.get(`https://mempool.space/api/address/${address}`);
+      const txs = res.data.txrefs || [];
+
+      const confirmedTx = txs.find(tx => tx.confirmations > 0 && tx.tx_hash !== lastConfirmedTxId);
+
+      if (confirmedTx) {
+        const amountBTC = confirmedTx.value / 1e8; // satoshis a BTC
+
+        return {
+          paid: true,
+          txid: confirmedTx.tx_hash,
+          amount: amountBTC,
+          message: `✅ Transacción BTC confirmada: ${amountBTC} BTC recibidos en ${address}`
+        };
+      }
+    } catch (err) {
+      console.error("⚠️ BTC check error:", err.message);
+    }
+
+    await delay(5000);
   }
 }

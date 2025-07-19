@@ -82,9 +82,9 @@ app.get("/check-payment/:deviceId/:currency", async (req, res) => {
 
   let result;
   try {
-    if (currency === "btc") result = await checkBTC(walletAddress);
-    else if (currency === "usdt") result = await checkUSDT(walletAddress);
-    else if (currency === "xrp") result = await checkXRP(walletAddress);
+    if (currency === "btc") result = await checkBTC(walletAddress, lastTxId);
+    else if (currency === "usdt") result = await checkUSDT(walletAddress, lastTxId);
+    else if (currency === "xrp") result = await checkXRP(walletAddress, lastTxId);
     else return res.status(400).json({ error: "Unsupported currency" });
   } catch (err) {
     return res.status(500).json({ status: "error", message: err.message });
