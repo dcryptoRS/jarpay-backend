@@ -1,36 +1,47 @@
 import axios from "axios";
 
+// Espera 5 segundos
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function checkXRP(address) {
-  try {
-    const url = `https://api.xrpscan.com/api/v1/account/${address}/transactions`;
-    const res = await axios.get(url);
+  let confirmedTx = null;
 
-    const txs = res.data.transactions;
+  console.log("⏳ Buscando transacción confirmada en XRPSCAN...");
 
-    if (!Array.isArray(txs)) {
-      throw new Error("Respuesta inesperada de XRPSCAN");
+  while (!confirmedTx) {
+    try {
+      const res = await axios.get(`https://api.xrpscan.com/api/v1/account/${address}/transactions`);
+      const txs = res.data;
+
+      if (Array.isArray(txs)) {
+        // Buscamos la primera transacción confirmada de tipo "Payment"
+        const paymentTx = txs.find(tx =>
+          tx.tx.TransactionType === "Payment" &&
+          tx.tx.Destination === address &&
+          tx.meta.TransactionResult === "tesSUCCESS"
+        );
+
+        if (paymentTx) {
+          confirmedTx = {
+            paid: true,
+            txid: paymentTx.hash,
+            amount: Number(paymentTx.tx.Amount) / 1000000, // Convertimos drops a XRP
+            message: `✅ Transacción confirmada: ${Number(paymentTx.tx.Amount) / 1000000} XRP recibidos.`
+          };
+          break;
+        }
+      } else {
+        console.warn("⚠️ Respuesta inesperada de XRPSCAN:", txs);
+      }
+
+    } catch (err) {
+      console.error("XRPSCAN check error:", err.message);
     }
 
-    const paymentTx = txs.find(tx =>
-      tx.tx &&
-      tx.tx.TransactionType === "Payment" &&
-      tx.tx.Destination === address &&
-      tx.meta?.TransactionResult === "tesSUCCESS"
-    );
-
-    if (paymentTx) {
-      const amount = parseFloat(paymentTx.tx.Amount) / 1_000_000; // en XRP
-      return {
-        paid: true,
-        txid: paymentTx.hash,
-        amount,
-        message: `✅ Transacción confirmada: se recibieron ${amount} XRP.`
-      };
-    }
-
-    return { paid: false, message: "⏳ Aún no se ha detectado una transacción confirmada." };
-  } catch (err) {
-    console.error("XRPSCAN check error:", err.message);
-    return { paid: false, message: "❌ Error al consultar la API de XRPSCAN." };
+    await delay(5000); // Espera 5 segundos antes de volver a consultar
   }
+
+  return confirmedTx;
 }
