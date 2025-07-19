@@ -10,7 +10,7 @@ export async function checkXRP(address) {
   while (true) {
     try {
       const res = await axios.get(`https://api.xrpscan.com/api/v1/account/${address}/transactions`);
-      const txs = res.data;
+      const txs = res.data.transactions;
 
       if (!Array.isArray(txs)) {
         console.log("❌ XRPSCAN no devolvió una lista de transacciones:", txs);
@@ -21,21 +21,21 @@ export async function checkXRP(address) {
       for (const tx of txs) {
         console.log("🧾 Revisando TX:", {
           hash: tx.hash,
-          destination: tx.tx?.Destination,
-          type: tx.tx?.TransactionType,
+          destination: tx.Destination,
+          type: tx.TransactionType,
           result: tx.meta?.TransactionResult,
         });
       }
 
       const paymentTx = txs.find(tx =>
-        tx.tx?.TransactionType === "Payment" &&
-        tx.tx?.Destination === address &&
+        tx.TransactionType === "Payment" &&
+        tx.Destination === address &&
         tx.meta?.TransactionResult === "tesSUCCESS"
       );
 
       if (paymentTx) {
         let amount;
-        const amt = paymentTx.tx.Amount;
+        const amt = paymentTx.Amount;
 
         if (typeof amt === "string") {
           amount = Number(amt) / 1_000_000;
