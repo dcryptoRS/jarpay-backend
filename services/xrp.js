@@ -1,6 +1,5 @@
 import axios from "axios";
 
-// Espera 5 segundos
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -8,7 +7,7 @@ function delay(ms) {
 export async function checkXRP(address) {
   let confirmedTx = null;
 
-  console.log("⏳ Buscando transacción confirmada en XRPSCAN...");
+  console.log("🔍 Buscando transacción confirmada en XRPSCAN...");
 
   while (!confirmedTx) {
     try {
@@ -16,31 +15,41 @@ export async function checkXRP(address) {
       const txs = res.data;
 
       if (Array.isArray(txs)) {
-        // Buscamos la primera transacción confirmada de tipo "Payment"
-        const paymentTx = txs.find(tx =>
-          tx.tx.TransactionType === "Payment" &&
-          tx.tx.Destination === address &&
-          tx.meta.TransactionResult === "tesSUCCESS"
-        );
+        const paymentTx = txs.find(tx => {
+          const isPayment = tx.tx.TransactionType === "Payment";
+          const isToAddress = tx.tx.Destination === address;
+          const isConfirmed = tx.meta.TransactionResult === "tesSUCCESS";
+
+          return isPayment && isToAddress && isConfirmed;
+        });
 
         if (paymentTx) {
+          let amount;
+          const amt = paymentTx.tx.Amount;
+
+          if (typeof amt === "string") {
+            amount = Number(amt) / 1_000_000; // drops → XRP
+          } else if (typeof amt === "object" && amt.currency === "XRP") {
+            amount = parseFloat(amt.value);
+          } else {
+            amount = "Desconocido";
+          }
+
           confirmedTx = {
             paid: true,
             txid: paymentTx.hash,
-            amount: Number(paymentTx.tx.Amount) / 1000000, // Convertimos drops a XRP
-            message: `✅ Transacción confirmada: ${Number(paymentTx.tx.Amount) / 1000000} XRP recibidos.`
+            amount,
+            message: `✅ Transacción confirmada: ${amount} XRP recibidos en ${address}`
           };
           break;
         }
-      } else {
-        console.warn("⚠️ Respuesta inesperada de XRPSCAN:", txs);
       }
 
     } catch (err) {
       console.error("XRPSCAN check error:", err.message);
     }
 
-    await delay(5000); // Espera 5 segundos antes de volver a consultar
+    await delay(5000);
   }
 
   return confirmedTx;
