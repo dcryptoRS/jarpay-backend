@@ -4,20 +4,12 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Revisa si hay una nueva transacción confirmada hacia una address XRP.
- * Reintenta cada 5 segundos hasta 10 minutos.
- * 
- * @param {string} address Dirección XRP a monitorear
- * @param {string|null} lastConfirmedTxId Hash de la última transacción confirmada, para evitar repeticiones
- * @returns {object} { paid, txid, amount, message } o { paid: false, error }
- */
 export async function checkXRP(address, lastConfirmedTxId = null) {
   console.log("🔍 Iniciando monitoreo de transacciones en XRPSCAN...");
   console.log(`📨 Dirección: ${address}`);
   console.log(`🕐 Esperando hasta 10 minutos, chequeando cada 5 segundos...`);
 
-  const timeoutMs = 10 * 60 * 1000; // 10 minutos
+  const timeoutMs = 10 * 60 * 1000;
   const startTime = Date.now();
 
   while (true) {
@@ -39,33 +31,25 @@ export async function checkXRP(address, lastConfirmedTxId = null) {
         continue;
       }
 
-      // Filtrar solo pagos exitosos a esta dirección
-      const validPayments = txs.filter(tx =>
+      // Filtrar transacciones de pago exitosas que NO sean la última confirmada
+      const newTxs = txs.filter(tx =>
         tx.TransactionType === "Payment" &&
         tx.Destination === address &&
-        tx.meta?.TransactionResult === "tesSUCCESS"
+        tx.meta?.TransactionResult === "tesSUCCESS" &&
+        tx.hash !== lastConfirmedTxId
       );
 
-      if (validPayments.length === 0) {
-        console.log("⏳ Sin transacciones válidas nuevas...");
+      if (newTxs.length === 0) {
+        console.log("⏳ No se encontró ninguna transacción XRP nueva distinta a la última confirmada.");
         await delay(5000);
         continue;
       }
 
-      // Ordenar por fecha descendente para buscar la tx más reciente
-      validPayments.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-      // Buscar la primera transacción diferente a la última confirmada
-      const newPaymentTx = validPayments.find(tx => tx.hash !== lastConfirmedTxId);
-
-      if (!newPaymentTx) {
-        console.log("⏳ No se encontró transacción nueva distinta a la última confirmada.");
-        await delay(5000);
-        continue;
-      }
+      // Devolver la más reciente (por orden de aparición)
+      const paymentTx = newTxs[0];
 
       let amount;
-      const amt = newPaymentTx.Amount;
+      const amt = paymentTx.Amount;
 
       if (typeof amt === "string") {
         amount = Number(amt) / 1_000_000;
@@ -75,16 +59,15 @@ export async function checkXRP(address, lastConfirmedTxId = null) {
         amount = "Desconocido";
       }
 
-      const mensaje = `✅ Transacción confirmada: ${amount} XRP recibidos.\nHash: ${newPaymentTx.hash}`;
+      const mensaje = `✅ Transacción confirmada: ${amount} XRP recibidos.\nHash: ${paymentTx.hash}`;
       console.log(mensaje);
 
       return {
         paid: true,
-        txid: newPaymentTx.hash,
+        txid: paymentTx.hash,
         amount,
         message: mensaje
       };
-
     } catch (err) {
       console.error("⚠️ Error consultando XRPSCAN:", err.message);
     }
