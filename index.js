@@ -20,12 +20,13 @@ const DEVICES = {
   }
 };
 
-// Iniciar tabla de tx confirmadas
+// Crear tabla con `txid` como clave única
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS confirmed_txs (
-      device_currency TEXT PRIMARY KEY,
-      txid TEXT,
+      id SERIAL PRIMARY KEY,
+      device_currency TEXT NOT NULL,
+      txid TEXT NOT NULL UNIQUE,
       amount TEXT,
       timestamp TIMESTAMPTZ DEFAULT NOW()
     );
@@ -33,7 +34,7 @@ async function initDb() {
 }
 initDb();
 
-// Alerta a Telegram
+// Telegram
 async function sendTelegramAlert({ amount, address, currency, txid }) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -47,27 +48,26 @@ async function sendTelegramAlert({ amount, address, currency, txid }) {
   });
 }
 
-// Obtener último txid confirmado desde DB
+// Última txid confirmada
 async function getLastTx(device_currency) {
   const r = await pool.query(
-    "SELECT txid FROM confirmed_txs WHERE device_currency = $1",
+    `SELECT txid FROM confirmed_txs
+     WHERE device_currency = $1
+     ORDER BY timestamp DESC
+     LIMIT 1`,
     [device_currency]
   );
   return r.rows[0]?.txid || null;
 }
 
-// Guardar nueva tx confirmada
+// Guardar tx confirmada, sin sobrescribir
 export async function saveConfirmedTx(device_currency, txid, amount) {
   console.log(`💾 Guardando tx confirmada en DB: ${device_currency} - ${txid} - ${amount}`);
-
   try {
     await pool.query(
       `INSERT INTO confirmed_txs (device_currency, txid, amount)
        VALUES ($1, $2, $3)
-       ON CONFLICT (device_currency) DO UPDATE
-       SET txid = EXCLUDED.txid,
-           amount = EXCLUDED.amount,
-           timestamp = NOW();`,
+       ON CONFLICT (txid) DO NOTHING;`,
       [device_currency, txid, amount]
     );
   } catch (err) {
@@ -75,7 +75,7 @@ export async function saveConfirmedTx(device_currency, txid, amount) {
   }
 }
 
-// Endpoint principal
+// Endpoint
 app.get("/check-payment/:deviceId/:currency", async (req, res) => {
   const { deviceId, currency } = req.params;
   const token = req.query.token;
@@ -83,6 +83,7 @@ app.get("/check-payment/:deviceId/:currency", async (req, res) => {
 
   const device = DEVICES[deviceId];
   if (!device) return res.status(400).json({ error: "Dispositivo no encontrado" });
+
   const walletAddress = device[currency];
   if (!walletAddress) return res.status(400).json({ error: "Wallet no configurada" });
 
