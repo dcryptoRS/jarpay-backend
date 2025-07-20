@@ -5,19 +5,15 @@ function delay(ms) {
 }
 
 /**
- * Revisa si hay una nueva transacción confirmada hacia una dirección BTC.
+ * Revisa si hay una nueva transacción BTC confirmada hacia una dirección.
  * Reintenta cada 5 segundos hasta 10 minutos.
- * 
- * @param {string} address Dirección BTC a monitorear
- * @param {string|null} lastConfirmedTxId Hash de la última transacción confirmada, para evitar repeticiones
- * @returns {object} { paid, txid, amount, message } o { paid: false, error }
  */
 export async function checkBTC(address, lastConfirmedTxId = null) {
   console.log("🔍 Iniciando monitoreo de transacciones BTC...");
   console.log(`📨 Dirección: ${address}`);
   console.log(`🕐 Esperando hasta 10 minutos, chequeando cada 5 segundos...`);
 
-  const timeoutMs = 10 * 60 * 1000; // 10 minutos
+  const timeoutMs = 10 * 60 * 1000;
   const startTime = Date.now();
 
   while (true) {
@@ -30,8 +26,8 @@ export async function checkBTC(address, lastConfirmedTxId = null) {
     }
 
     try {
-      const res = await axios.get(`https://mempool.space/api/address/${address}`);
-      const txs = res.data.txrefs || [];
+      const res = await axios.get(`https://mempool.space/api/address/${address}/txs`);
+      const txs = res.data;
 
       if (!Array.isArray(txs) || txs.length === 0) {
         console.log("⏳ Sin transacciones BTC aún...");
@@ -39,26 +35,25 @@ export async function checkBTC(address, lastConfirmedTxId = null) {
         continue;
       }
 
-      // Ordenar txs más recientes primero
-      txs.sort((a, b) => b.confirmation_height - a.confirmation_height);
+      const confirmedTxs = txs.filter(tx => tx.status?.confirmed);
 
-      // Buscar tx diferente a la última confirmada
-      const newTx = txs.find(tx => tx.tx_hash !== lastConfirmedTxId);
+      const newTx = confirmedTxs.find(tx => tx.txid !== lastConfirmedTxId);
 
       if (!newTx) {
-        console.log("⏳ No se encontró transacción BTC nueva distinta a la última confirmada.");
+        console.log("⏳ No se encontró transacción BTC nueva confirmada.");
         await delay(5000);
         continue;
       }
 
-      const amountBTC = newTx.value / 1e8; // satoshis a BTC
+      const outputToAddress = newTx.vout.find(v => v.scriptpubkey_address === address);
+      const amountBTC = outputToAddress ? outputToAddress.value / 1e8 : 0;
 
-      const message = `✅ Pago en BTC confirmado por ${amountBTC} BTC\nHash: ${newTx.tx_hash}`;
+      const message = `✅ Pago en BTC confirmado por ${amountBTC} BTC\nHash: ${newTx.txid}`;
       console.log(message);
 
       return {
         paid: true,
-        txid: newTx.tx_hash,
+        txid: newTx.txid,
         amount: amountBTC,
         message
       };

@@ -5,19 +5,15 @@ function delay(ms) {
 }
 
 /**
- * Revisa si hay una nueva transacción confirmada hacia una dirección USDT (TRON).
+ * Revisa si hay una nueva transacción USDT confirmada en TRON hacia una dirección.
  * Reintenta cada 5 segundos hasta 10 minutos.
- * 
- * @param {string} address Dirección TRON a monitorear
- * @param {string|null} lastConfirmedTxId Hash de la última transacción confirmada, para evitar repeticiones
- * @returns {object} { paid, txid, amount, message } o { paid: false, error }
  */
 export async function checkUSDT(address, lastConfirmedTxId = null) {
   console.log("🔍 Iniciando monitoreo de transacciones USDT (TRON)...");
   console.log(`📨 Dirección: ${address}`);
   console.log(`🕐 Esperando hasta 10 minutos, chequeando cada 5 segundos...`);
 
-  const timeoutMs = 10 * 60 * 1000; // 10 minutos
+  const timeoutMs = 10 * 60 * 1000;
   const startTime = Date.now();
 
   while (true) {
@@ -39,13 +35,19 @@ export async function checkUSDT(address, lastConfirmedTxId = null) {
         continue;
       }
 
-      // Filtrar solo USDT confirmados a esta dirección
-      const validTxs = txs.filter(tx =>
-        tx.tokenInfo &&
-        tx.tokenInfo.tokenAbbr === "USDT" &&
-        tx.confirmed === true &&
-        tx.toAddress === address
-      );
+      // Filtrar solo USDT confirmados dirigidos a la dirección correcta
+      const validTxs = txs.filter(tx => {
+        const tokenInfo = tx.tokenInfo;
+        const transferInfo = tx.tokenTransferInfo;
+
+        return (
+          tx.confirmed === true &&
+          tokenInfo &&
+          tokenInfo.tokenAbbr === "USDT" &&
+          transferInfo &&
+          transferInfo.to_address === address
+        );
+      });
 
       if (validTxs.length === 0) {
         console.log("⏳ Sin transacciones USDT confirmadas aún...");
@@ -53,10 +55,10 @@ export async function checkUSDT(address, lastConfirmedTxId = null) {
         continue;
       }
 
-      // Ordenar por fecha descendente para encontrar la tx más reciente
-      validTxs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      // Ordenar por timestamp descendente (más reciente primero)
+      validTxs.sort((a, b) => b.timestamp - a.timestamp);
 
-      // Buscar la primera tx diferente a la última confirmada
+      // Buscar la primera tx distinta a la última confirmada
       const newTx = validTxs.find(tx => tx.hash !== lastConfirmedTxId);
 
       if (!newTx) {
