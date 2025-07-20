@@ -60,22 +60,25 @@ async function getLastTx(device_currency) {
   return r.rows[0]?.txid || null;
 }
 
-// Guardar tx confirmada, sin sobrescribir
+// Guardar tx confirmada, sin sobrescribir, y retornar si se insertó
 export async function saveConfirmedTx(device_currency, txid, amount) {
   console.log(`💾 Guardando tx confirmada en DB: ${device_currency} - ${txid} - ${amount}`);
   try {
-    await pool.query(
+    const result = await pool.query(
       `INSERT INTO confirmed_txs (device_currency, txid, amount)
        VALUES ($1, $2, $3)
-       ON CONFLICT (txid) DO NOTHING;`,
+       ON CONFLICT (txid) DO NOTHING
+       RETURNING *;`,
       [device_currency, txid, amount]
     );
+    return result.rowCount > 0;
   } catch (err) {
     console.error("❌ Error al guardar transacción confirmada:", err.message);
+    return false;
   }
 }
 
-// Endpoint
+// Endpoint principal
 app.get("/check-payment/:deviceId/:currency", async (req, res) => {
   const { deviceId, currency } = req.params;
   const token = req.query.token;
@@ -102,13 +105,17 @@ app.get("/check-payment/:deviceId/:currency", async (req, res) => {
 
   if (result.paid) {
     if (result.txid !== lastTxId) {
-      await saveConfirmedTx(key, result.txid, result.amount);
-      await sendTelegramAlert({
-        amount: result.amount,
-        address: walletAddress,
-        currency,
-        txid: result.txid
-      });
+      const wasSaved = await saveConfirmedTx(key, result.txid, result.amount);
+
+      if (wasSaved) {
+        await sendTelegramAlert({
+          amount: result.amount,
+          address: walletAddress,
+          currency,
+          txid: result.txid
+        });
+      }
+
       return res.json({
         status: "confirmed",
         txid: result.txid,
