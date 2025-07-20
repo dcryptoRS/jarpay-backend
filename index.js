@@ -20,7 +20,7 @@ const DEVICES = {
   }
 };
 
-// Crear tabla con `txid` como clave única
+// Crear tabla
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS confirmed_txs (
@@ -48,7 +48,7 @@ async function sendTelegramAlert({ amount, address, currency, txid }) {
   });
 }
 
-// Última txid confirmada
+// Última tx confirmada en DB
 async function getLastTx(device_currency) {
   const r = await pool.query(
     `SELECT txid FROM confirmed_txs
@@ -60,7 +60,7 @@ async function getLastTx(device_currency) {
   return r.rows[0]?.txid || null;
 }
 
-// Guardar tx confirmada, sin sobrescribir, y retornar si se insertó
+// Guardar tx confirmada
 export async function saveConfirmedTx(device_currency, txid, amount) {
   console.log(`💾 Guardando tx confirmada en DB: ${device_currency} - ${txid} - ${amount}`);
   try {
@@ -78,7 +78,7 @@ export async function saveConfirmedTx(device_currency, txid, amount) {
   }
 }
 
-// Endpoint principal
+// 🧠 Endpoint principal
 app.get("/check-payment/:deviceId/:currency", async (req, res) => {
   const { deviceId, currency } = req.params;
   const token = req.query.token;
@@ -91,22 +91,20 @@ app.get("/check-payment/:deviceId/:currency", async (req, res) => {
   if (!walletAddress) return res.status(400).json({ error: "Wallet no configurada" });
 
   const key = `${deviceId}_${currency}`;
-  const lastTxId = await getLastTx(key);
+  const lastTxId = await getLastTx(key); // 🧠 Obtenemos la última tx confirmada
 
-  let result;
   try {
+    let result;
+
+    // ⛏️ Revisión por moneda
     if (currency === "btc") result = await checkBTC(walletAddress, lastTxId);
     else if (currency === "usdt") result = await checkUSDT(walletAddress, lastTxId);
     else if (currency === "xrp") result = await checkXRP(walletAddress, lastTxId);
     else return res.status(400).json({ error: "Unsupported currency" });
-  } catch (err) {
-    return res.status(500).json({ status: "error", message: err.message });
-  }
 
-  if (result.paid) {
-    if (result.txid !== lastTxId) {
+    // ✅ Si hay nueva transacción confirmada
+    if (result.paid && result.txid !== lastTxId) {
       const wasSaved = await saveConfirmedTx(key, result.txid, result.amount);
-
       if (wasSaved) {
         await sendTelegramAlert({
           amount: result.amount,
@@ -122,13 +120,15 @@ app.get("/check-payment/:deviceId/:currency", async (req, res) => {
         amount: result.amount,
         message: result.message
       });
-    } else {
-      return res.json({ status: "pending" });
     }
-  }
 
-  if (result.error) return res.json({ status: "error", message: result.error });
-  return res.json({ status: "pending" });
+    // 🔁 Si ya fue guardada o no hay pago, devolver "pending"
+    return res.json({ status: "pending" });
+
+  } catch (err) {
+    console.error("❌ Error en check-payment:", err.message);
+    return res.status(500).json({ status: "error", message: err.message });
+  }
 });
 
 app.listen(PORT, () => {
